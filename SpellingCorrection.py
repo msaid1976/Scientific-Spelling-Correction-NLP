@@ -919,8 +919,6 @@ class SpellingCorrector:
             FileNotFoundError: If preprocessed directory or required files don't exist
             JSONDecodeError: If JSON files are corrupted or malformed
         """
-        st.info("Loading preprocessed data...")
-        
         # Check if preprocessed data exists
         if not os.path.exists(preprocessed_dir):
             st.error(f"Preprocessed data directory '{preprocessed_dir}' not found.")
@@ -955,12 +953,6 @@ class SpellingCorrector:
                 metadata = json.load(f)
                 self.total_words = int(metadata.get("total_words", sum(self.unigrams.values())))
                 self.min_word_frequency = int(metadata.get("min_word_frequency", 1))
-            
-            st.success(
-                f"Preprocessed data loaded with {self.total_words} words and "
-                f"{len(self.vocab)} unique words (min_freq={self.min_word_frequency}, "
-                f"k={self.bigram_smoothing_k})."
-            )
             
         except Exception as e:
             st.error(f"Error loading preprocessed data: {e}")
@@ -1336,7 +1328,7 @@ def main():
     """
     st.set_page_config(page_title="Scientific Spelling Correction", layout="wide")
     
-    st.title("Scientific Spelling Correction System")
+    st.title("🔬 Scientific Spelling Correction System")
 
     preprocessed_dir = "preprocessed_data"
     corpus_dir = "corpus"
@@ -1358,16 +1350,45 @@ def main():
         st.session_state.spell_loaded_sample = None
     if "spell_error_analysis" not in st.session_state:
         st.session_state.spell_error_analysis = None
+    if "corpus_loaded" not in st.session_state:
+        st.session_state.corpus_loaded = "corrector" in st.session_state
+    if "corrector" not in st.session_state:
+        st.session_state.corpus_loaded = False
 
     post_build_notice = st.session_state.pop("post_build_notice", None)
     if post_build_notice:
         st.success(post_build_notice)
 
+    build_pressed = False
+    clear_pressed = False
+    load_pressed = False
+    bigram_smoothing_k = float(st.session_state.get("bigram_smoothing_k", 0.1))
+
     with st.sidebar:
-        st.header("Corpus Management")
-        panel_title = "🧱 Rebuild Corpus (Optional)" if corpus_ready else "🧱 Build Corpus"
-        panel_header_color = "#0b2e59" if corpus_ready else "#b42318"
-        panel_body_color = "#e8eff8" if corpus_ready else "#fdecec"
+        st.header("🧠 Corpus Management")
+        approx_words = 0
+        current_min_freq = None
+        current_target_words = None
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+                    approx_words = int(metadata.get("total_words", 0))
+                    current_min_freq = metadata.get("min_word_frequency")
+                    current_target_words = metadata.get("target_words")
+            except Exception:
+                approx_words = 0
+
+        if corpus_ready:
+            st.markdown(f"**Words (approx): {approx_words:,}**")
+            if current_min_freq is not None:
+                st.caption(
+                    f"Current model settings -> min_freq={current_min_freq}, "
+                    f"target_words={current_target_words}"
+                )
+
+        panel_header_color = "#0b2e59"
+        panel_body_color = "#e8eff8"
         st.markdown(
             f"""
             <style>
@@ -1389,76 +1410,119 @@ def main():
                 background: {panel_body_color};
                 padding-top: 0.25rem;
             }}
+            [data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"] {{
+                background: #0b2e59 !important;
+                border-color: #0b2e59 !important;
+                color: #ffffff !important;
+            }}
+            [data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"]:hover {{
+                background: #12407a !important;
+                border-color: #12407a !important;
+            }}
             </style>
             """,
             unsafe_allow_html=True,
         )
-        build_section = st.expander(panel_title, expanded=not corpus_ready)
-
-        with build_section:
-            target_corpus_words = st.number_input(
-                "Target corpus words (>=100,000)",
-                min_value=100000,
-                step=50000,
-                key="target_corpus_words",
-                help="Preprocessing stops once this minimum word count is reached.",
+        load_section = st.expander("🚀 Load Corpus", expanded=not st.session_state.corpus_loaded)
+        with load_section:
+            bigram_smoothing_k = st.selectbox(
+                "Bigram smoothing k",
+                options=[0.01, 0.05, 0.1, 0.5, 1.0],
+                key="bigram_smoothing_k",
+                help="Add-k smoothing used in P(word2|word1) bigram probabilities.",
             )
-            min_word_freq = st.number_input(
-                "Min word frequency in dictionary",
-                min_value=1,
-                step=1,
-                key="min_word_freq",
-                help="Words below this corpus count are pruned from vocab and n-gram tables.",
-            )
-            if corpus_ready:
-                bigram_smoothing_k = st.selectbox(
-                    "Bigram smoothing k",
-                    options=[0.01, 0.05, 0.1, 0.5, 1.0],
-                    key="bigram_smoothing_k",
-                    help="Add-k smoothing used in P(word2|word1) bigram probabilities.",
-                )
-            else:
-                bigram_smoothing_k = float(st.session_state.get("bigram_smoothing_k", 0.1))
-                st.caption(
-                    "Bigram smoothing will be applied after the model is built."
-                )
-
-            build_pressed = st.button(
-                "Fetch/Build CS Corpus (arXiv)",
+            load_pressed = st.button(
+                "Load Scientific Corpus",
                 type="primary",
                 width="stretch",
+                disabled=not corpus_ready,
             )
-            clear_pressed = st.button("Clear Corpus", width="stretch")
+            load_progress_placeholder = st.empty()
+            load_status_placeholder = st.empty()
 
-        approx_words = 0
-        current_min_freq = None
-        current_target_words = None
-        if os.path.exists(metadata_path):
-            try:
-                with open(metadata_path, "r", encoding="utf-8") as f:
-                    metadata = json.load(f)
-                    approx_words = int(metadata.get("total_words", 0))
-                    current_min_freq = metadata.get("min_word_frequency")
-                    current_target_words = metadata.get("target_words")
-            except Exception:
-                approx_words = 0
-        st.markdown(f"**Words (approx): {approx_words:,}**")
-        if current_min_freq is not None:
-            st.caption(
-                f"Current model settings -> min_freq={current_min_freq}, "
-                f"target_words={current_target_words}"
-            )
+            if not corpus_ready:
+                load_status_placeholder.caption(
+                    "Preprocessed corpus artifacts are not ready yet."
+                )
+
+            if load_pressed:
+                try:
+                    progress = load_progress_placeholder.progress(0)
+                    load_status_placeholder.caption("Validating preprocessed artifacts...")
+                    time.sleep(0.08)
+                    progress.progress(20)
+
+                    load_status_placeholder.caption("Loading n-gram model into memory...")
+                    time.sleep(0.08)
+                    progress.progress(55)
+
+                    load_model_into_session(
+                        preprocessed_dir,
+                        bigram_smoothing_k=float(bigram_smoothing_k),
+                    )
+                    progress.progress(90)
+                    time.sleep(0.08)
+                    progress.progress(100)
+                    st.session_state.corpus_loaded = True
+                    st.session_state.post_build_notice = "Scientific corpus loaded successfully."
+                    st.rerun()
+                except Exception as e:
+                    load_status_placeholder.error(f"Load failed: {e}")
+
+            if st.session_state.corpus_loaded and "corrector" in st.session_state:
+                loaded_words = int(st.session_state.corrector.total_words)
+                loaded_vocab = int(len(st.session_state.corrector.vocab))
+                loaded_min_freq = int(getattr(st.session_state.corrector, "min_word_frequency", 1))
+                loaded_k = float(getattr(st.session_state.corrector, "bigram_smoothing_k", 0.1))
+                st.markdown(
+                    f"""
+                    <div style="background:#d9efe9;border:1px solid #b8e0d5;color:#1f6f55;
+                                border-radius:10px;padding:10px 12px;margin-top:8px;line-height:1.45;">
+                        <div style="font-weight:600;">✓ Scientific corpus loaded: {loaded_words:,} words</div>
+                        <div style="font-size:0.92em;margin-top:4px;">
+                            Preprocessed data loaded with {loaded_words:,} words and {loaded_vocab:,}
+                            unique words (min_freq={loaded_min_freq}, k={loaded_k}).
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        if st.session_state.corpus_loaded:
+            rebuild_section = st.expander("🧱 Rebuild Corpus", expanded=False)
+            with rebuild_section:
+                target_corpus_words = st.number_input(
+                    "Target corpus words (>=100,000)",
+                    min_value=100000,
+                    step=50000,
+                    key="target_corpus_words",
+                    help="Preprocessing stops once this minimum word count is reached.",
+                )
+                min_word_freq = st.number_input(
+                    "Min word frequency in dictionary",
+                    min_value=1,
+                    step=1,
+                    key="min_word_freq",
+                    help="Words below this corpus count are pruned from vocab and n-gram tables.",
+                )
+
+                build_pressed = st.button(
+                    "Fetch/Build CS Corpus (arXiv)",
+                    type="primary",
+                    width="stretch",
+                )
+                clear_pressed = st.button("Clear Corpus", width="stretch")
 
         st.markdown("---")
-        st.subheader("📈 Visualizations")
+        st.subheader("📊 Visualizations")
         if st.button(
             "Show Corpus Statistics",
             width="stretch",
-            disabled=not corpus_ready,
+            disabled=not st.session_state.corpus_loaded,
         ):
             st.session_state.show_visualizations = True
-        if not corpus_ready:
-            st.caption("Build/load corpus first to enable visual analytics.")
+        if not st.session_state.corpus_loaded:
+            st.caption("Load corpus first to enable visual analytics.")
 
     if clear_pressed:
         removed_entries = clear_preprocessed_data(preprocessed_dir)
@@ -1467,6 +1531,7 @@ def main():
         st.session_state.pop("viz_data_cache", None)
         st.session_state.pop("spell_error_analysis", None)
         st.session_state.pop("pending_model_reload", None)
+        st.session_state.corpus_loaded = False
         st.session_state.show_visualizations = False
         st.session_state.post_build_notice = (
             f"Cleared preprocessed corpus data ({removed_entries} entries removed from '{preprocessed_dir}')."
@@ -1544,34 +1609,25 @@ def main():
             st.session_state.pop("vocab_list", None)
             st.session_state.pop("viz_data_cache", None)
             st.session_state.pop("spell_error_analysis", None)
-            st.session_state.pending_model_reload = True
+            st.session_state.corpus_loaded = False
             st.session_state.post_build_notice = (
-                "Corpus is ready. Loading the updated language model..."
+                "Corpus artifacts rebuilt. Press 'Load Scientific Corpus' to load the model."
             )
             time.sleep(0.3)
             st.rerun()
         except Exception as e:
             st.error(f"Failed to build corpus data: {e}")
 
-    # Initialize the spelling corrector when data is available
-    force_reload_model = bool(st.session_state.pop("pending_model_reload", False))
-    if preprocessed_data_ready(preprocessed_dir):
-        if "corrector" not in st.session_state or force_reload_model:
-            with st.spinner("Loading language model..."):
-                load_model_into_session(
-                    preprocessed_dir,
-                    bigram_smoothing_k=float(bigram_smoothing_k),
-                )
+    # Corpus is loaded only on explicit button action
+    if not st.session_state.get("corpus_loaded", False) or "corrector" not in st.session_state:
+        if not preprocessed_data_ready(preprocessed_dir):
+            st.warning("Preprocessed data is missing.")
+            st.info("Build corpus artifacts first, then press 'Load Scientific Corpus'.")
         else:
-            st.session_state.corrector.bigram_smoothing_k = float(bigram_smoothing_k)
-    else:
-        st.warning(
-            "Preprocessed data is missing. Use the sidebar to extract/build the corpus."
-        )
-        st.info(
-            "Expected files: unigrams.json, bigrams.json, trigrams.json, vocab.json, metadata.json"
-        )
+            st.info("Corpus is available but not loaded. Use the sidebar button 'Load Scientific Corpus'.")
         return
+
+    st.session_state.corrector.bigram_smoothing_k = float(bigram_smoothing_k)
 
     corrector = st.session_state.corrector
 
