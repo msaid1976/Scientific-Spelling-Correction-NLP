@@ -21,6 +21,8 @@ import os
 import time
 import shutil
 import zipfile
+import altair as alt
+import pandas as pd
 
 from preprocess_corpus import preprocess_corpus
 
@@ -132,6 +134,368 @@ def load_model_into_session(preprocessed_dir, bigram_smoothing_k=0.1):
         bigram_smoothing_k=bigram_smoothing_k,
     )
     st.session_state.vocab_list = st.session_state.corrector.get_sorted_vocabulary()
+
+
+def _build_visualization_data(corrector):
+    """Build derived dataframes used by the visualization tabs."""
+    sorted_vocab = [
+        (word, freq)
+        for word, freq in corrector.get_sorted_vocabulary()
+        if word.isalpha()
+    ]
+    if not sorted_vocab:
+        sorted_vocab = [("n/a", 1)]
+
+    total_tokens = sum(freq for _, freq in sorted_vocab)
+    vocab_size = len(sorted_vocab)
+
+    top_terms_df = pd.DataFrame(
+        sorted_vocab[:20], columns=["term", "frequency"]
+    )
+
+    rank_limit = min(3000, vocab_size)
+    rank_rows = []
+    for idx, (_, freq) in enumerate(sorted_vocab[:rank_limit], start=1):
+        rank_rows.append({"rank": idx, "frequency": freq})
+    rank_df = pd.DataFrame(rank_rows)
+
+    cumulative_rows = []
+    checkpoints = [10, 50, 100, 500, 1000, 5000, 10000]
+    cumulative_sum = 0
+    checkpoint_set = {v for v in checkpoints if v <= vocab_size}
+    for idx, (_, freq) in enumerate(sorted_vocab, start=1):
+        cumulative_sum += freq
+        if idx in checkpoint_set:
+            cumulative_rows.append(
+                {"top_n": idx, "coverage_pct": (cumulative_sum / max(1, total_tokens)) * 100.0}
+            )
+    if not cumulative_rows:
+        cumulative_rows.append({"top_n": vocab_size, "coverage_pct": 100.0})
+    coverage_df = pd.DataFrame(cumulative_rows)
+
+    prefix_counter = Counter()
+    suffix_counter = Counter()
+    initial_counter = Counter()
+    length_counter = Counter()
+    frequency_bands = Counter(
+        {
+            "1 (Hapax)": 0,
+            "2-5": 0,
+            "6-20": 0,
+            "21-100": 0,
+            ">100": 0,
+        }
+    )
+
+    for word, freq in sorted_vocab:
+        if len(word) >= 3:
+            prefix_counter[word[:3]] += freq
+            suffix_counter[word[-3:]] += freq
+        initial_counter[word[0]] += freq
+        length_bucket = str(len(word)) if len(word) <= 20 else "20+"
+        length_counter[length_bucket] += freq
+
+        if freq == 1:
+            frequency_bands["1 (Hapax)"] += 1
+        elif freq <= 5:
+            frequency_bands["2-5"] += 1
+        elif freq <= 20:
+            frequency_bands["6-20"] += 1
+        elif freq <= 100:
+            frequency_bands["21-100"] += 1
+        else:
+            frequency_bands[">100"] += 1
+
+    top_prefixes_df = pd.DataFrame(
+        prefix_counter.most_common(15), columns=["prefix", "frequency"]
+    )
+    top_suffixes_df = pd.DataFrame(
+        suffix_counter.most_common(15), columns=["suffix", "frequency"]
+    )
+
+    def _length_sort_key(value):
+        if value == "20+":
+            return 999
+        return int(value)
+
+    word_length_df = pd.DataFrame(
+        [{"length": length, "count": count} for length, count in length_counter.items()]
+    )
+    word_length_df = word_length_df.sort_values(
+        by="length", key=lambda s: s.map(_length_sort_key)
+    )
+
+    initial_letter_df = pd.DataFrame(
+        initial_counter.most_common(15), columns=["letter", "frequency"]
+    )
+
+    frequency_band_df = pd.DataFrame(
+        [{"band": k, "term_count": v} for k, v in frequency_bands.items()]
+    )
+
+    bigram_unique = sum(len(next_words) for next_words in corrector.bigrams.values())
+    trigram_unique = 0
+    for nested in corrector.trigrams.values():
+        trigram_unique += sum(len(next_words) for next_words in nested.values())
+
+    corpus_metrics = {
+        "total_tokens": int(total_tokens),
+        "vocab_size": int(vocab_size),
+        "avg_token_frequency": float(total_tokens / max(1, vocab_size)),
+        "unique_bigrams": int(bigram_unique),
+        "unique_trigrams": int(trigram_unique),
+    }
+
+    return {
+        "corpus_metrics": corpus_metrics,
+        "top_terms_df": top_terms_df,
+        "rank_df": rank_df,
+        "coverage_df": coverage_df,
+        "top_prefixes_df": top_prefixes_df,
+        "top_suffixes_df": top_suffixes_df,
+        "word_length_df": word_length_df,
+        "initial_letter_df": initial_letter_df,
+        "frequency_band_df": frequency_band_df,
+    }
+
+
+def _get_visualization_data(corrector):
+    """Cache visualization data in session state for current loaded model."""
+    model_key = (
+        int(corrector.total_words),
+        int(len(corrector.vocab)),
+        int(getattr(corrector, "min_word_frequency", 1)),
+    )
+    cached = st.session_state.get("viz_data_cache")
+    if cached and cached.get("key") == model_key:
+        return cached["data"]
+
+    data = _build_visualization_data(corrector)
+    st.session_state["viz_data_cache"] = {"key": model_key, "data": data}
+    return data
+
+
+def render_visualizations_panel(corrector):
+    """Render 3-tab corpus visualization panel."""
+    viz_data = _get_visualization_data(corrector)
+    corpus_metrics = viz_data["corpus_metrics"]
+    top_terms_df = viz_data["top_terms_df"]
+    rank_df = viz_data["rank_df"]
+    coverage_df = viz_data["coverage_df"]
+    top_prefixes_df = viz_data["top_prefixes_df"]
+    top_suffixes_df = viz_data["top_suffixes_df"]
+    word_length_df = viz_data["word_length_df"]
+    initial_letter_df = viz_data["initial_letter_df"]
+    frequency_band_df = viz_data["frequency_band_df"]
+
+    st.markdown("## 📈 Corpus Visualizations")
+    viz_tab1, viz_tab2, viz_tab3 = st.tabs(
+        ["📊 Corpus Statistics", "🔤 Word Analysis", "❌ Error Analysis"]
+    )
+
+    with viz_tab1:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Tokens", f"{corpus_metrics['total_tokens']:,}")
+        m2.metric("Vocabulary Size", f"{corpus_metrics['vocab_size']:,}")
+        m3.metric("Unique Bigrams", f"{corpus_metrics['unique_bigrams']:,}")
+        m4.metric("Unique Trigrams", f"{corpus_metrics['unique_trigrams']:,}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            top_terms_chart = (
+                alt.Chart(top_terms_df)
+                .mark_bar(color="#e89a7d")
+                .encode(
+                    x=alt.X("frequency:Q", title="Frequency"),
+                    y=alt.Y("term:N", sort="-x", title="Scientific Terms"),
+                    tooltip=["term:N", "frequency:Q"],
+                )
+                .properties(title="Top 20 Most Frequent Scientific Terms", height=360)
+            )
+            st.altair_chart(top_terms_chart, width="stretch")
+        with col2:
+            zipf_chart = (
+                alt.Chart(rank_df)
+                .mark_line(color="#4f79b5")
+                .encode(
+                    x=alt.X("rank:Q", scale=alt.Scale(type="log"), title="Word Rank (log scale)"),
+                    y=alt.Y("frequency:Q", scale=alt.Scale(type="log"), title="Frequency (log scale)"),
+                    tooltip=["rank:Q", "frequency:Q"],
+                )
+                .properties(title="Zipf Curve (Rank vs Frequency)", height=360)
+            )
+            st.altair_chart(zipf_chart, width="stretch")
+
+        col3, col4 = st.columns(2)
+        with col3:
+            coverage_chart = (
+                alt.Chart(coverage_df)
+                .mark_line(point=True, color="#2a9d8f")
+                .encode(
+                    x=alt.X("top_n:Q", title="Top-N Frequent Terms"),
+                    y=alt.Y("coverage_pct:Q", title="Token Coverage (%)"),
+                    tooltip=[
+                        alt.Tooltip("top_n:Q", title="Top-N"),
+                        alt.Tooltip("coverage_pct:Q", title="Coverage", format=".2f"),
+                    ],
+                )
+                .properties(title="Cumulative Token Coverage by Top-N Terms", height=300)
+            )
+            st.altair_chart(coverage_chart, width="stretch")
+        with col4:
+            band_order = ["1 (Hapax)", "2-5", "6-20", "21-100", ">100"]
+            band_chart = (
+                alt.Chart(frequency_band_df)
+                .mark_bar(color="#b089c6")
+                .encode(
+                    x=alt.X("band:N", sort=band_order, title="Frequency Band"),
+                    y=alt.Y("term_count:Q", title="Number of Unique Terms"),
+                    tooltip=["band:N", "term_count:Q"],
+                )
+                .properties(title="Vocabulary Frequency Bands", height=300)
+            )
+            st.altair_chart(band_chart, width="stretch")
+
+    with viz_tab2:
+        col1, col2 = st.columns(2)
+        with col1:
+            length_chart = (
+                alt.Chart(word_length_df)
+                .mark_bar(color="#7fa8cc")
+                .encode(
+                    x=alt.X("length:O", title="Word Length (characters)"),
+                    y=alt.Y("count:Q", title="Number of Words"),
+                    tooltip=["length:O", "count:Q"],
+                )
+                .properties(title="Scientific Term Length Distribution", height=340)
+            )
+            st.altair_chart(length_chart, width="stretch")
+
+        with col2:
+            prefix_chart = (
+                alt.Chart(top_prefixes_df)
+                .mark_bar(color="#99d8a0")
+                .encode(
+                    x=alt.X("frequency:Q", title="Frequency"),
+                    y=alt.Y("prefix:N", sort="-x", title="Prefix (3 letters)"),
+                    tooltip=["prefix:N", "frequency:Q"],
+                )
+                .properties(title="Most Common Scientific Prefixes", height=340)
+            )
+            st.altair_chart(prefix_chart, width="stretch")
+
+        col3, col4 = st.columns(2)
+        with col3:
+            suffix_chart = (
+                alt.Chart(top_suffixes_df)
+                .mark_bar(color="#f2b36f")
+                .encode(
+                    x=alt.X("frequency:Q", title="Frequency"),
+                    y=alt.Y("suffix:N", sort="-x", title="Suffix (3 letters)"),
+                    tooltip=["suffix:N", "frequency:Q"],
+                )
+                .properties(title="Most Common Scientific Suffixes", height=300)
+            )
+            st.altair_chart(suffix_chart, width="stretch")
+        with col4:
+            letter_chart = (
+                alt.Chart(initial_letter_df)
+                .mark_bar(color="#7cb8b2")
+                .encode(
+                    x=alt.X("letter:N", sort="-y", title="Initial Letter"),
+                    y=alt.Y("frequency:Q", title="Frequency"),
+                    tooltip=["letter:N", "frequency:Q"],
+                )
+                .properties(title="Top Initial Letters in Scientific Terms", height=300)
+            )
+            st.altair_chart(letter_chart, width="stretch")
+
+    with viz_tab3:
+        error_info = st.session_state.get("error_info", {})
+        total_errors = len(error_info)
+        total_words_checked = int(st.session_state.get("last_checked_word_count", 0))
+        homophone_errors = 0
+        for _, value in error_info.items():
+            word, _, _, _ = value
+            if word.lower() in CONFUSABLES:
+                homophone_errors += 1
+        non_word_errors = sum(
+            1 for _, _, _, error_type in error_info.values() if error_type == "non-word"
+        )
+        context_errors = sum(
+            1 for _, _, _, error_type in error_info.values() if error_type == "real-word"
+        )
+
+        error_df = pd.DataFrame(
+            [
+                {"type": "Non-word errors", "count": non_word_errors},
+                {"type": "Context errors", "count": context_errors},
+                {"type": "Homophone errors", "count": homophone_errors},
+            ]
+        )
+        error_rate = (
+            (total_errors / total_words_checked) if total_words_checked > 0 else 0.0
+        )
+        donut_df = pd.DataFrame(
+            [
+                {"segment": "Error", "value": error_rate},
+                {"segment": "Clean", "value": max(0.0, 1.0 - error_rate)},
+            ]
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            error_chart = (
+                alt.Chart(error_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X("type:N", title=""),
+                    y=alt.Y("count:Q", title="Number of Errors"),
+                    color=alt.Color(
+                        "type:N",
+                        scale=alt.Scale(
+                            domain=["Non-word errors", "Context errors", "Homophone errors"],
+                            range=["#e9858a", "#76c0c1", "#c8c8c8"],
+                        ),
+                        legend=None,
+                    ),
+                    tooltip=["type:N", "count:Q"],
+                )
+                .properties(title="Error Type Distribution", height=420)
+            )
+            st.altair_chart(error_chart, width="stretch")
+
+        with col2:
+            donut_chart = (
+                alt.Chart(donut_df)
+                .mark_arc(innerRadius=110)
+                .encode(
+                    theta=alt.Theta("value:Q"),
+                    color=alt.Color(
+                        "segment:N",
+                        scale=alt.Scale(domain=["Error", "Clean"], range=["#fb696e", "#d9d9d9"]),
+                        legend=None,
+                    ),
+                    tooltip=["segment:N", alt.Tooltip("value:Q", format=".1%")],
+                )
+                .properties(title="Text Error Rate", height=420)
+            )
+            center_text_df = pd.DataFrame(
+                [{"label": f"{error_rate * 100:.1f}%\nError Rate", "x": 0, "y": 0}]
+            )
+            center_text = (
+                alt.Chart(center_text_df)
+                .mark_text(fontSize=26, fontWeight=700, align="center")
+                .encode(
+                    x=alt.value(205),
+                    y=alt.value(205),
+                    text="label:N",
+                )
+            )
+            st.altair_chart(donut_chart + center_text, width="stretch")
+
+        if total_words_checked == 0:
+            st.info("Run a spell check to populate live Error Analysis charts.")
 
 # Edit distance functions
 def min_edit_distance(source, target, ins_cost=1, del_cost=1, sub_cost=1):
@@ -723,6 +1087,8 @@ def main():
         st.session_state.min_word_freq = 2
     if "bigram_smoothing_k" not in st.session_state:
         st.session_state.bigram_smoothing_k = 0.1
+    if "show_visualizations" not in st.session_state:
+        st.session_state.show_visualizations = False
 
     post_build_notice = st.session_state.pop("post_build_notice", None)
     if post_build_notice:
@@ -730,7 +1096,7 @@ def main():
 
     with st.sidebar:
         st.header("Corpus Management")
-        panel_title = "Rebuild Corpus (Optional)" if corpus_ready else "Build Corpus"
+        panel_title = "🧱 Rebuild Corpus (Optional)" if corpus_ready else "🧱 Build Corpus"
         panel_header_color = "#0b2e59" if corpus_ready else "#b42318"
         panel_body_color = "#e8eff8" if corpus_ready else "#fdecec"
         st.markdown(
@@ -791,9 +1157,9 @@ def main():
             build_pressed = st.button(
                 "Fetch/Build CS Corpus (arXiv)",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             )
-            clear_pressed = st.button("Clear Corpus", use_container_width=True)
+            clear_pressed = st.button("Clear Corpus", width="stretch")
 
         approx_words = 0
         current_min_freq = None
@@ -814,11 +1180,24 @@ def main():
                 f"target_words={current_target_words}"
             )
 
+        st.markdown("---")
+        st.subheader("📈 Visualizations")
+        if st.button(
+            "Show Corpus Statistics",
+            width="stretch",
+            disabled=not corpus_ready,
+        ):
+            st.session_state.show_visualizations = True
+        if not corpus_ready:
+            st.caption("Build/load corpus first to enable visual analytics.")
+
     if clear_pressed:
         removed_entries = clear_preprocessed_data(preprocessed_dir)
         st.session_state.pop("corrector", None)
         st.session_state.pop("vocab_list", None)
+        st.session_state.pop("viz_data_cache", None)
         st.session_state.pop("pending_model_reload", None)
+        st.session_state.show_visualizations = False
         st.session_state.post_build_notice = (
             f"Cleared preprocessed corpus data ({removed_entries} entries removed from '{preprocessed_dir}')."
         )
@@ -893,6 +1272,7 @@ def main():
             )
             st.session_state.pop("corrector", None)
             st.session_state.pop("vocab_list", None)
+            st.session_state.pop("viz_data_cache", None)
             st.session_state.pending_model_reload = True
             st.session_state.post_build_notice = (
                 "Corpus is ready. Loading the updated language model..."
@@ -923,6 +1303,12 @@ def main():
         return
 
     corrector = st.session_state.corrector
+
+    if st.session_state.get("show_visualizations", False):
+        render_visualizations_panel(corrector)
+        if st.button("Close Visualizations"):
+            st.session_state.show_visualizations = False
+            st.rerun()
     
     # Create tabs for different functionalities
     tab1, tab2, tab3 = st.tabs(["Spell Check", "Word Explorer", "About"])
@@ -967,6 +1353,11 @@ def main():
                         end = start + len(word)
                         token_positions.append((word, start, end))
                         pos = end
+
+                    alpha_word_count = sum(
+                        1 for token, _, _ in token_positions if re.match(r"[A-Za-z']+$", token)
+                    )
+                    st.session_state.last_checked_word_count = alpha_word_count
                     
                     # Detect errors
                     errors = corrector.detect_errors([w for w, _, _ in token_positions])
