@@ -1,15 +1,29 @@
-SAMPLE 1:
+SAMPLE 1 - NLP Pipeline Errors:
+Our transfromer model achived higher accurcy on the token classifiction benchmark after we re-trained the encoder with domain-specific pretraining corpra. During error auditing, the lemmatiztion stage still introduses noisy featurs, and the sequence labeler ocasionaly mis-tags entity boundries in code-switched abstracts.
 
-the experimant was designid to meesure the affect of light intensity on plant grouth. the results suggest that higher intensity led too faster photosyntesis, but the data was not campletly cansistant. there contributions were ighly apprecaited
+SAMPLE 2 - Physics Experiment Errors:
+The interferomter mesured subtle phase shiftts after thermal expantion of the cavity during the third calibration cycle. Their was clear evidence that the detector was to sensetive near resonance, and background scintilation drifted when the cryostat temprature controller lagged.
 
-SAMPLE 2:
+SAMPLE 3 - Chemistry Lab Errors:
+The catalist increased reaction kinetcs in the first run, however the soloution pH meter was miscalibrated and the titration endpoint occured later then expected for both replicates. Spectral deconvoltion also over-estimated product yeild because baseline corrrection was applied with the wrong solvent reference.
 
-It was obsorved that light intensity had a strong affect on photosyntesis, yet some values were out of there expected range
+SAMPLE 4 - Computer Science Context Errors:
+The algorithem reduced latancy in distributed infernce across four worker nodes, but the cache coherance policy caused race condtions when async updates arrived out of order. Under heavy concurency, lock elision effected throughput and produced non-determinstic failures in the replication layer.
 
-SAMPLE 3:
+SAMPLE 5 - Data Science Modeling Errors:
+The regresssion model exibited heteroscedastcity in the residual diagnostics, so we applyed bootstrapp resamplng to estimte robust confdence intervals for each coefficent. Model seleciton favoured the wrong penalization term because the validation splitt leaked temporal signal from future observations.
 
-The experimant was design to determine the effect of pH on enzyme activty, but the results did not affect the reaction as expected
+SAMPLE 6 - Astronomy Observation Errors:
+The telescop captured anomolous luminsity fluctuations in two target stars while spectrall lines driffted during calbration of the photometic pipeline. Astrometric registrtion failed on stacked frames, and the reduction script accidently substracted dark-current using mismatched exposure metadata.
 
-SAMPLE 4:
+SAMPLE 7 - Materials Science Errors:
+Microstrcture imaging revealed grain bouandary defects after cyclic loading, and the annealling procedur did not stablize crystallographic orientaion under repeated stress. Electron difrraction patterns sugested phase seggregation near the interface where quenching rate was inconsistnt.
 
-Reserchers obsorved that nutriant deficency led to lower yeilds, althogh a few samples did not folow the expexted trend
+SAMPLE 8 - Robotics & Control Errors:
+The manipulator trajctory diverged when sensor fuson lag increased beyond the estimator threshold, and the controllor gain schedulling produced oscilations near obstacle avoidence mode. During field tests, inertial aligment jitter caused unstable yaw corrrections and delayed waypoint convergense.
+
+SAMPLE 9 - Cybersecurity Analysis Errors:
+Intrusion detections flagged unusual packett bursts on the east-west segment, but the signeture matcher misclassifed benign handshakes as persistance atempts in the network. Threat intel correltion also over-linked unrelated indicators, causing false possitives in the incident triage dashboard.
+
+SAMPLE 10 - Bioinformatics Pipeline Errors:
+Genome alignmnt quality droped after adapter trimmng, and kmer frequncy filtering accidently removed low-coverge variants in the assembely stage. Differential expresion statistics were skewed because normaliztion factors used an outdated annotation releese and batch corrrection was only partialy applied.
