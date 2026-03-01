@@ -504,7 +504,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Top 20 Most Frequent Scientific Terms", height=360)
             )
-            st.altair_chart(top_terms_chart, width="stretch")
+            st.altair_chart(top_terms_chart, use_container_width=True)
         with col2:
             zipf_chart = (
                 alt.Chart(rank_df)
@@ -516,7 +516,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Zipf Curve (Rank vs Frequency)", height=360)
             )
-            st.altair_chart(zipf_chart, width="stretch")
+            st.altair_chart(zipf_chart, use_container_width=True)
 
         col3, col4 = st.columns(2)
         with col3:
@@ -533,7 +533,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Cumulative Token Coverage by Top-N Terms", height=300)
             )
-            st.altair_chart(coverage_chart, width="stretch")
+            st.altair_chart(coverage_chart, use_container_width=True)
         with col4:
             band_order = ["1 (Hapax)", "2-5", "6-20", "21-100", ">100"]
             band_chart = (
@@ -546,7 +546,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Vocabulary Frequency Bands", height=300)
             )
-            st.altair_chart(band_chart, width="stretch")
+            st.altair_chart(band_chart, use_container_width=True)
 
     with viz_tab2:
         col1, col2 = st.columns(2)
@@ -561,7 +561,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Scientific Term Length Distribution", height=340)
             )
-            st.altair_chart(length_chart, width="stretch")
+            st.altair_chart(length_chart, use_container_width=True)
 
         with col2:
             prefix_chart = (
@@ -574,7 +574,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Most Common Scientific Prefixes", height=340)
             )
-            st.altair_chart(prefix_chart, width="stretch")
+            st.altair_chart(prefix_chart, use_container_width=True)
 
         col3, col4 = st.columns(2)
         with col3:
@@ -588,7 +588,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Most Common Scientific Suffixes", height=300)
             )
-            st.altair_chart(suffix_chart, width="stretch")
+            st.altair_chart(suffix_chart, use_container_width=True)
         with col4:
             letter_chart = (
                 alt.Chart(initial_letter_df)
@@ -600,7 +600,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Top Initial Letters in Scientific Terms", height=300)
             )
-            st.altair_chart(letter_chart, width="stretch")
+            st.altair_chart(letter_chart, use_container_width=True)
 
 def render_spellcheck_error_analysis(analysis_data):
     """Render error analysis outputs in Spell Check tab."""
@@ -625,7 +625,7 @@ def render_spellcheck_error_analysis(analysis_data):
         }
     )
     if not corrections_table.empty:
-        st.dataframe(corrections_table, width="stretch", hide_index=True)
+        st.dataframe(corrections_table, use_container_width=True, hide_index=True)
     else:
         st.info("No errors were detected for this text.")
 
@@ -657,7 +657,7 @@ def render_spellcheck_error_analysis(analysis_data):
             )
             .properties(title="Error Type Distribution", height=330)
         )
-        st.altair_chart(error_chart, width="stretch")
+        st.altair_chart(error_chart, use_container_width=True)
 
     with chart_col2:
         donut_chart = (
@@ -684,7 +684,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 text="label:N",
             )
         )
-        st.altair_chart(donut_chart + center_text, width="stretch")
+        st.altair_chart(donut_chart + center_text, use_container_width=True)
 
     chart_col3, chart_col4 = st.columns(2)
     with chart_col3:
@@ -699,7 +699,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Most Frequent Error Tokens", height=320)
             )
-            st.altair_chart(common_errors_chart, width="stretch")
+            st.altair_chart(common_errors_chart, use_container_width=True)
         else:
             st.info("No error tokens to plot.")
 
@@ -723,7 +723,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Error Positions Across Text", height=320)
             )
-            st.altair_chart(position_chart, width="stretch")
+            st.altair_chart(position_chart, use_container_width=True)
         else:
             st.info("No positional error data to plot.")
 
@@ -740,7 +740,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Confidence Distribution of Top Suggestions", height=300)
             )
-            st.altair_chart(confidence_chart, width="stretch")
+            st.altair_chart(confidence_chart, use_container_width=True)
         else:
             st.info("No confidence data available.")
 
@@ -756,7 +756,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Edit Distance Profile of Corrections", height=300)
             )
-            st.altair_chart(distance_chart, width="stretch")
+            st.altair_chart(distance_chart, use_container_width=True)
         else:
             st.info("No edit-distance data available.")
 
@@ -1423,104 +1423,106 @@ def main():
             """,
             unsafe_allow_html=True,
         )
-        load_section = st.expander("🚀 Load Corpus", expanded=not st.session_state.corpus_loaded)
-        with load_section:
-            bigram_smoothing_k = st.selectbox(
-                "Bigram smoothing k",
-                options=[0.01, 0.05, 0.1, 0.5, 1.0],
-                key="bigram_smoothing_k",
-                help="Add-k smoothing used in P(word2|word1) bigram probabilities.",
+        if corpus_ready:
+            load_section = st.expander("🚀 Load Corpus", expanded=not st.session_state.corpus_loaded)
+            with load_section:
+                bigram_smoothing_k = st.selectbox(
+                    "Bigram smoothing k",
+                    options=[0.01, 0.05, 0.1, 0.5, 1.0],
+                    key="bigram_smoothing_k",
+                    help="Add-k smoothing used in P(word2|word1) bigram probabilities.",
+                )
+                load_pressed = st.button(
+                    "Load Scientific Corpus",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not corpus_ready,
+                )
+                load_progress_placeholder = st.empty()
+                load_status_placeholder = st.empty()
+
+                if load_pressed:
+                    try:
+                        progress = load_progress_placeholder.progress(0)
+                        load_status_placeholder.caption("Validating preprocessed artifacts...")
+                        time.sleep(0.08)
+                        progress.progress(20)
+
+                        load_status_placeholder.caption("Loading n-gram model into memory...")
+                        time.sleep(0.08)
+                        progress.progress(55)
+
+                        load_model_into_session(
+                            preprocessed_dir,
+                            bigram_smoothing_k=float(bigram_smoothing_k),
+                        )
+                        progress.progress(90)
+                        time.sleep(0.08)
+                        progress.progress(100)
+                        st.session_state.corpus_loaded = True
+                        st.session_state.post_build_notice = "Scientific corpus loaded successfully."
+                        st.rerun()
+                    except Exception as e:
+                        load_status_placeholder.error(f"Load failed: {e}")
+
+                if st.session_state.corpus_loaded and "corrector" in st.session_state:
+                    loaded_words = int(st.session_state.corrector.total_words)
+                    loaded_vocab = int(len(st.session_state.corrector.vocab))
+                    loaded_min_freq = int(getattr(st.session_state.corrector, "min_word_frequency", 1))
+                    loaded_k = float(getattr(st.session_state.corrector, "bigram_smoothing_k", 0.1))
+                    st.markdown(
+                        f"""
+                        <div style="background:#d9efe9;border:1px solid #b8e0d5;color:#1f6f55;
+                                    border-radius:10px;padding:10px 12px;margin-top:8px;line-height:1.45;">
+                            <div style="font-weight:600;">✓ Scientific corpus loaded: {loaded_words:,} words</div>
+                            <div style="font-size:0.92em;margin-top:4px;">
+                                Preprocessed data loaded with {loaded_words:,} words and {loaded_vocab:,}
+                                unique words (min_freq={loaded_min_freq}, k={loaded_k}).
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+        rebuild_section = st.expander("🧱 Rebuild Corpus", expanded=not corpus_ready)
+        with rebuild_section:
+            target_corpus_words = st.number_input(
+                "Target corpus words (>=100,000)",
+                min_value=100000,
+                step=50000,
+                key="target_corpus_words",
+                help="Preprocessing stops once this minimum word count is reached.",
             )
-            load_pressed = st.button(
-                "Load Scientific Corpus",
+            min_word_freq = st.number_input(
+                "Min word frequency in dictionary",
+                min_value=1,
+                step=1,
+                key="min_word_freq",
+                help="Words below this corpus count are pruned from vocab and n-gram tables.",
+            )
+
+            build_pressed = st.button(
+                "Fetch/Build CS Corpus (arXiv)",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
+            )
+            clear_pressed = st.button(
+                "Clear Corpus",
+                use_container_width=True,
                 disabled=not corpus_ready,
             )
-            load_progress_placeholder = st.empty()
-            load_status_placeholder = st.empty()
-
-            if not corpus_ready:
-                load_status_placeholder.caption(
-                    "Preprocessed corpus artifacts are not ready yet."
-                )
-
-            if load_pressed:
-                try:
-                    progress = load_progress_placeholder.progress(0)
-                    load_status_placeholder.caption("Validating preprocessed artifacts...")
-                    time.sleep(0.08)
-                    progress.progress(20)
-
-                    load_status_placeholder.caption("Loading n-gram model into memory...")
-                    time.sleep(0.08)
-                    progress.progress(55)
-
-                    load_model_into_session(
-                        preprocessed_dir,
-                        bigram_smoothing_k=float(bigram_smoothing_k),
-                    )
-                    progress.progress(90)
-                    time.sleep(0.08)
-                    progress.progress(100)
-                    st.session_state.corpus_loaded = True
-                    st.session_state.post_build_notice = "Scientific corpus loaded successfully."
-                    st.rerun()
-                except Exception as e:
-                    load_status_placeholder.error(f"Load failed: {e}")
-
-            if st.session_state.corpus_loaded and "corrector" in st.session_state:
-                loaded_words = int(st.session_state.corrector.total_words)
-                loaded_vocab = int(len(st.session_state.corrector.vocab))
-                loaded_min_freq = int(getattr(st.session_state.corrector, "min_word_frequency", 1))
-                loaded_k = float(getattr(st.session_state.corrector, "bigram_smoothing_k", 0.1))
-                st.markdown(
-                    f"""
-                    <div style="background:#d9efe9;border:1px solid #b8e0d5;color:#1f6f55;
-                                border-radius:10px;padding:10px 12px;margin-top:8px;line-height:1.45;">
-                        <div style="font-weight:600;">✓ Scientific corpus loaded: {loaded_words:,} words</div>
-                        <div style="font-size:0.92em;margin-top:4px;">
-                            Preprocessed data loaded with {loaded_words:,} words and {loaded_vocab:,}
-                            unique words (min_freq={loaded_min_freq}, k={loaded_k}).
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-        if st.session_state.corpus_loaded:
-            rebuild_section = st.expander("🧱 Rebuild Corpus", expanded=False)
-            with rebuild_section:
-                target_corpus_words = st.number_input(
-                    "Target corpus words (>=100,000)",
-                    min_value=100000,
-                    step=50000,
-                    key="target_corpus_words",
-                    help="Preprocessing stops once this minimum word count is reached.",
-                )
-                min_word_freq = st.number_input(
-                    "Min word frequency in dictionary",
-                    min_value=1,
-                    step=1,
-                    key="min_word_freq",
-                    help="Words below this corpus count are pruned from vocab and n-gram tables.",
-                )
-
-                build_pressed = st.button(
-                    "Fetch/Build CS Corpus (arXiv)",
-                    type="primary",
-                    width="stretch",
-                )
-                clear_pressed = st.button("Clear Corpus", width="stretch")
 
         st.markdown("---")
         st.subheader("📊 Visualizations")
+        viz_open = bool(st.session_state.get("show_visualizations", False))
+        viz_toggle_label = "Close Visualization" if viz_open else "Open Visualization"
         if st.button(
-            "Show Corpus Statistics",
-            width="stretch",
+            viz_toggle_label,
+            use_container_width=True,
             disabled=not st.session_state.corpus_loaded,
         ):
-            st.session_state.show_visualizations = True
+            st.session_state.show_visualizations = not viz_open
+            st.rerun()
         if not st.session_state.corpus_loaded:
             st.caption("Load corpus first to enable visual analytics.")
 
@@ -1633,9 +1635,6 @@ def main():
 
     if st.session_state.get("show_visualizations", False):
         render_visualizations_panel(corrector)
-        if st.button("Close Visualizations"):
-            st.session_state.show_visualizations = False
-            st.rerun()
     
     # Create tabs for different functionalities
     tab1, tab2, tab3 = st.tabs(["Spell Check", "Word Explorer", "About"])
