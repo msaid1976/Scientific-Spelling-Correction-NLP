@@ -13,6 +13,7 @@ Key Features:
 - Interactive Streamlit web interface
 """
 import streamlit as st
+import streamlit.components.v1 as components
 import json
 import re
 from collections import Counter, defaultdict
@@ -90,6 +91,47 @@ SCIENTIFIC_ERROR_SAMPLES = {
         "normaliztion factors used an outdated annotation releese and batch corrrection was only partialy applied."
     ),
 }
+
+INTERACTIVE_TEXT_COMPONENT_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "components",
+    "interactive_text_menu",
+)
+INTERACTIVE_TEXT_COMPONENT = (
+    components.declare_component(
+        "interactive_text_menu_v2",
+        path=INTERACTIVE_TEXT_COMPONENT_PATH,
+    )
+    if os.path.isdir(INTERACTIVE_TEXT_COMPONENT_PATH)
+    else None
+)
+
+
+def _render_interactive_text_component(text, token_positions, error_map, suggestion_map, key):
+    """Render custom interactive text component and return selected correction event."""
+    if not INTERACTIVE_TEXT_COMPONENT:
+        st.warning(
+            "Interactive text component is missing. Using manual correction fallback below."
+        )
+        return None
+
+    token_payload = []
+    for idx, (_, start, end) in enumerate(token_positions):
+        token_payload.append(
+            {
+                "index": idx,
+                "start": int(start),
+                "end": int(end),
+                "error_type": error_map.get(idx),
+                "suggestions": suggestion_map.get(idx, []),
+            }
+        )
+
+    return INTERACTIVE_TEXT_COMPONENT(
+        data={"text": text, "tokens": token_payload},
+        key=key,
+        default=None,
+    )
 
 
 def preprocessed_data_ready(preprocessed_dir):
@@ -467,6 +509,136 @@ def _analyze_text_for_error_visualization(corrector, text):
     }
 
 
+def _build_spellcheck_state(corrector, text):
+    """Build all state needed for spellcheck rendering and interactions."""
+    tokens = re.findall(r"[\w']+|[.,!?;]", text)
+    token_positions = []
+    pos = 0
+    for token in tokens:
+        start = text.find(token, pos)
+        if start < 0:
+            start = pos
+        end = start + len(token)
+        token_positions.append((token, start, end))
+        pos = end
+
+    errors = corrector.detect_errors([w for w, _, _ in token_positions])
+    error_map = {idx: err_type for idx, err_type in errors}
+    error_info = {
+        idx: (word, start, end, error_map[idx])
+        for idx, (word, start, end) in enumerate(token_positions)
+        if idx in error_map
+    }
+
+    non_word_count = sum(1 for _, err_type in errors if err_type == "non-word")
+    real_word_count = sum(1 for _, err_type in errors if err_type == "real-word")
+    alpha_word_count = sum(
+        1 for token, _, _ in token_positions if re.fullmatch(r"[A-Za-z']+", token)
+    )
+
+    return {
+        "text": text,
+        "tokens": tokens,
+        "token_positions": token_positions,
+        "errors": errors,
+        "errors_map": error_map,
+        "error_info": error_info,
+        "non_word_count": non_word_count,
+        "real_word_count": real_word_count,
+        "total_errors": non_word_count + real_word_count,
+        "alpha_word_count": alpha_word_count,
+    }
+
+
+def _suggestions_for_error(corrector, tokens, error_idx, max_suggestions=5):
+    """Return context-aware suggestions for one token index."""
+    if error_idx < 0 or error_idx >= len(tokens):
+        return []
+
+    alpha_pattern = r"[A-Za-z']+"
+    prev_word = (
+        tokens[error_idx - 1].lower()
+        if error_idx > 0 and re.fullmatch(alpha_pattern, tokens[error_idx - 1])
+        else None
+    )
+    next_word = (
+        tokens[error_idx + 1].lower()
+        if error_idx < len(tokens) - 1 and re.fullmatch(alpha_pattern, tokens[error_idx + 1])
+        else None
+    )
+    return corrector.suggest_corrections_with_stats(
+        tokens[error_idx].lower(),
+        prev_word,
+        next_word,
+        max_suggestions=max_suggestions,
+    )
+
+
+def _replace_token_in_text(text, token_positions, token_index, replacement):
+    """Replace one token while preserving original spacing and punctuation."""
+    rebuilt = []
+    last_pos = 0
+    for idx, (token, start, end) in enumerate(token_positions):
+        rebuilt.append(text[last_pos:start])
+        rebuilt.append(replacement if idx == token_index else token)
+        last_pos = end
+    rebuilt.append(text[last_pos:])
+    return "".join(rebuilt)
+
+
+def _preserve_token_case(source, replacement):
+    """Preserve basic capitalization style after correction."""
+    if source.isupper():
+        return replacement.upper()
+    if source[:1].isupper() and source[1:].islower():
+        return replacement.capitalize()
+    return replacement
+
+
+def _clear_selection_query():
+    """Remove selection-related query params while keeping other params intact."""
+    if hasattr(st, "query_params"):
+        if "selected_error" in st.query_params:
+            del st.query_params["selected_error"]
+        if "selected_candidate" in st.query_params:
+            del st.query_params["selected_candidate"]
+        return
+
+    if hasattr(st, "experimental_get_query_params") and hasattr(st, "experimental_set_query_params"):
+        params = st.experimental_get_query_params()
+        changed = False
+        if "selected_error" in params:
+            params.pop("selected_error", None)
+            changed = True
+        if "selected_candidate" in params:
+            params.pop("selected_candidate", None)
+            changed = True
+        if changed:
+            st.experimental_set_query_params(**params)
+
+
+def _apply_correction_and_refresh(corrector, spell_results, token_index, replacement):
+    """Apply a chosen correction and refresh all spellcheck-derived state."""
+    updated_text = _replace_token_in_text(
+        spell_results["text"],
+        spell_results["token_positions"],
+        token_index,
+        replacement,
+    )
+    updated_results = _build_spellcheck_state(corrector, updated_text)
+    # Defer text-area value mutation until next rerun (before widget is created).
+    st.session_state["spell_check_input_pending"] = updated_text
+    st.session_state.last_checked_word_count = updated_results["alpha_word_count"]
+    st.session_state.spell_check_results = updated_results
+    st.session_state.errors = updated_results["errors_map"]
+    st.session_state.error_info = updated_results["error_info"]
+    st.session_state.spell_error_analysis = _analyze_text_for_error_visualization(
+        corrector, updated_text
+    )
+    _clear_selection_query()
+    st.rerun()
+
+
 def render_visualizations_panel(corrector):
     """Render 2-tab corpus visualization panel."""
     viz_data = _get_visualization_data(corrector)
@@ -504,7 +676,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Top 20 Most Frequent Scientific Terms", height=360)
             )
-            st.altair_chart(top_terms_chart, use_container_width=True)
+            st.altair_chart(top_terms_chart, width="stretch")
         with col2:
             zipf_chart = (
                 alt.Chart(rank_df)
@@ -516,7 +688,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Zipf Curve (Rank vs Frequency)", height=360)
             )
-            st.altair_chart(zipf_chart, use_container_width=True)
+            st.altair_chart(zipf_chart, width="stretch")
 
         col3, col4 = st.columns(2)
         with col3:
@@ -533,7 +705,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Cumulative Token Coverage by Top-N Terms", height=300)
             )
-            st.altair_chart(coverage_chart, use_container_width=True)
+            st.altair_chart(coverage_chart, width="stretch")
         with col4:
             band_order = ["1 (Hapax)", "2-5", "6-20", "21-100", ">100"]
             band_chart = (
@@ -546,7 +718,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Vocabulary Frequency Bands", height=300)
             )
-            st.altair_chart(band_chart, use_container_width=True)
+            st.altair_chart(band_chart, width="stretch")
 
     with viz_tab2:
         col1, col2 = st.columns(2)
@@ -561,7 +733,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Scientific Term Length Distribution", height=340)
             )
-            st.altair_chart(length_chart, use_container_width=True)
+            st.altair_chart(length_chart, width="stretch")
 
         with col2:
             prefix_chart = (
@@ -574,7 +746,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Most Common Scientific Prefixes", height=340)
             )
-            st.altair_chart(prefix_chart, use_container_width=True)
+            st.altair_chart(prefix_chart, width="stretch")
 
         col3, col4 = st.columns(2)
         with col3:
@@ -588,7 +760,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Most Common Scientific Suffixes", height=300)
             )
-            st.altair_chart(suffix_chart, use_container_width=True)
+            st.altair_chart(suffix_chart, width="stretch")
         with col4:
             letter_chart = (
                 alt.Chart(initial_letter_df)
@@ -600,7 +772,7 @@ def render_visualizations_panel(corrector):
                 )
                 .properties(title="Top Initial Letters in Scientific Terms", height=300)
             )
-            st.altair_chart(letter_chart, use_container_width=True)
+            st.altair_chart(letter_chart, width="stretch")
 
 def render_spellcheck_error_analysis(analysis_data):
     """Render error analysis outputs in Spell Check tab."""
@@ -625,7 +797,7 @@ def render_spellcheck_error_analysis(analysis_data):
         }
     )
     if not corrections_table.empty:
-        st.dataframe(corrections_table, use_container_width=True, hide_index=True)
+        st.dataframe(corrections_table, width="stretch", hide_index=True)
     else:
         st.info("No errors were detected for this text.")
 
@@ -657,7 +829,7 @@ def render_spellcheck_error_analysis(analysis_data):
             )
             .properties(title="Error Type Distribution", height=330)
         )
-        st.altair_chart(error_chart, use_container_width=True)
+        st.altair_chart(error_chart, width="stretch")
 
     with chart_col2:
         donut_chart = (
@@ -684,7 +856,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 text="label:N",
             )
         )
-        st.altair_chart(donut_chart + center_text, use_container_width=True)
+        st.altair_chart(donut_chart + center_text, width="stretch")
 
     chart_col3, chart_col4 = st.columns(2)
     with chart_col3:
@@ -699,7 +871,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Most Frequent Error Tokens", height=320)
             )
-            st.altair_chart(common_errors_chart, use_container_width=True)
+            st.altair_chart(common_errors_chart, width="stretch")
         else:
             st.info("No error tokens to plot.")
 
@@ -723,7 +895,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Error Positions Across Text", height=320)
             )
-            st.altair_chart(position_chart, use_container_width=True)
+            st.altair_chart(position_chart, width="stretch")
         else:
             st.info("No positional error data to plot.")
 
@@ -740,7 +912,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Confidence Distribution of Top Suggestions", height=300)
             )
-            st.altair_chart(confidence_chart, use_container_width=True)
+            st.altair_chart(confidence_chart, width="stretch")
         else:
             st.info("No confidence data available.")
 
@@ -756,7 +928,7 @@ def render_spellcheck_error_analysis(analysis_data):
                 )
                 .properties(title="Edit Distance Profile of Corrections", height=300)
             )
-            st.altair_chart(distance_chart, use_container_width=True)
+            st.altair_chart(distance_chart, width="stretch")
         else:
             st.info("No edit-distance data available.")
 
@@ -1350,6 +1522,8 @@ def main():
         st.session_state.spell_loaded_sample = None
     if "spell_error_analysis" not in st.session_state:
         st.session_state.spell_error_analysis = None
+    if "spell_check_results" not in st.session_state:
+        st.session_state.spell_check_results = None
     if "corpus_loaded" not in st.session_state:
         st.session_state.corpus_loaded = "corrector" in st.session_state
     if "corrector" not in st.session_state:
@@ -1435,7 +1609,7 @@ def main():
                 load_pressed = st.button(
                     "Load Scientific Corpus",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not corpus_ready,
                 )
                 load_progress_placeholder = st.empty()
@@ -1504,11 +1678,11 @@ def main():
             build_pressed = st.button(
                 "Fetch/Build CS Corpus (arXiv)",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             )
             clear_pressed = st.button(
                 "Clear Corpus",
-                use_container_width=True,
+                width="stretch",
                 disabled=not corpus_ready,
             )
 
@@ -1518,7 +1692,7 @@ def main():
         viz_toggle_label = "Close Visualization" if viz_open else "Open Visualization"
         if st.button(
             viz_toggle_label,
-            use_container_width=True,
+            width="stretch",
             disabled=not st.session_state.corpus_loaded,
         ):
             st.session_state.show_visualizations = not viz_open
@@ -1532,6 +1706,8 @@ def main():
         st.session_state.pop("vocab_list", None)
         st.session_state.pop("viz_data_cache", None)
         st.session_state.pop("spell_error_analysis", None)
+        st.session_state.pop("spell_check_results", None)
+        st.session_state.pop("spell_check_input_pending", None)
         st.session_state.pop("pending_model_reload", None)
         st.session_state.corpus_loaded = False
         st.session_state.show_visualizations = False
@@ -1611,6 +1787,8 @@ def main():
             st.session_state.pop("vocab_list", None)
             st.session_state.pop("viz_data_cache", None)
             st.session_state.pop("spell_error_analysis", None)
+            st.session_state.pop("spell_check_results", None)
+            st.session_state.pop("spell_check_input_pending", None)
             st.session_state.corpus_loaded = False
             st.session_state.post_build_notice = (
                 "Corpus artifacts rebuilt. Press 'Load Scientific Corpus' to load the model."
@@ -1655,6 +1833,9 @@ def main():
             ["None"] + list(SCIENTIFIC_ERROR_SAMPLES.keys()),
             key="spell_sample_selected",
         )
+        if "spell_check_input_pending" in st.session_state:
+            st.session_state.spell_check_input = st.session_state.pop("spell_check_input_pending")
+
         if (
             selected_sample != "None"
             and st.session_state.get("spell_loaded_sample") != selected_sample
@@ -1673,237 +1854,232 @@ def main():
         )
         
         # Store errors in session state for click handling
-        if 'errors' not in st.session_state:
+        if "errors" not in st.session_state:
             st.session_state.errors = {}
-        if 'error_info' not in st.session_state:
+        if "error_info" not in st.session_state:
             st.session_state.error_info = {}
-        
+
         if st.button("Check Spelling", type="primary", key="check_spelling"):
             if text_input:
                 with st.spinner("Analyzing text..."):
-                    # Tokenize the text
-                    words = re.findall(r"[\w']+|[.,!?;]", text_input)
-
-                    # Track original positions of each token for highlighting
-                    token_positions = []
-                    pos = 0
-                    for word in words:
-                        start = text_input.find(word, pos)
-                        end = start + len(word)
-                        token_positions.append((word, start, end))
-                        pos = end
-
-                    alpha_word_count = sum(
-                        1 for token, _, _ in token_positions if re.match(r"[A-Za-z']+$", token)
-                    )
-                    st.session_state.last_checked_word_count = alpha_word_count
-                    
-                    # Detect errors
-                    errors = corrector.detect_errors([w for w, _, _ in token_positions])
-                    st.session_state.errors = {i: err_type for i, err_type in errors}
-                    
-                    # Display summary statistics
-                    non_word_count = sum(1 for _, err_type in errors if err_type == "non-word")
-                    real_word_count = sum(1 for _, err_type in errors if err_type == "real-word")
-                    total_errors = non_word_count + real_word_count
-                    
-                    # Create columns for stats
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total Errors", total_errors)
-                    with col2:
-                        st.metric("Spelling Errors", non_word_count)
-                    with col3:
-                        st.metric("Confusable Words", real_word_count)
-                    
-                    # Display text with errors highlighted
-                    st.subheader("Text Analysis")
-                    html_text = ""
-                    last_pos = 0
-                    error_info = {}
-                    
-                    for i, (word, start, end) in enumerate(token_positions):
-                        # Add text before this token
-                        html_text += text_input[last_pos:start]
-                        
-                        # Check if this is an error
-                        is_error = any(err_idx == i for err_idx, _ in errors)
-                        
-                        if is_error:
-                            # This is an error word
-                            error_type = next(err_type for err_idx, err_type in errors if err_idx == i)
-                            error_class = "non-word" if error_type == "non-word" else "real-word"
-                            # Make error words clickable
-                            html_text += f'<span class="{error_class}" id="error-{i}" onclick="handleWordClick({i})">{word}</span>'
-                            error_info[i] = (word, start, end, error_type)
-                        else:
-                            html_text += word
-                        
-                        last_pos = end
-                    
-                    # Add remaining text
-                    html_text += text_input[last_pos:]
-                    
-                    # Store error info in session state
-                    st.session_state.error_info = error_info
+                    spell_results = _build_spellcheck_state(corrector, text_input)
+                    st.session_state.last_checked_word_count = spell_results["alpha_word_count"]
+                    st.session_state.spell_check_results = spell_results
+                    st.session_state.errors = spell_results["errors_map"]
+                    st.session_state.error_info = spell_results["error_info"]
                     st.session_state.spell_error_analysis = _analyze_text_for_error_visualization(
                         corrector, text_input
                     )
-                    
-                    # Display with custom CSS - improved contrast
-                    st.markdown(f"""
-                    <style>
-                    .non-word {{
-                        background-color: #ffcccc;
-                        border-bottom: 2px solid red;
-                        padding: 2px;
-                        border-radius: 3px;
-                        color: #000;
-                        cursor: pointer;
-                    }}
-                    .real-word {{
-                        background-color: #ffe6cc;
-                        border-bottom: 2px solid #ff9900;
-                        padding: 2px;
-                        border-radius: 3px;
-                        color: #000;
-                        cursor: pointer;
-                    }}
-                    </style>
-                    <div style="border: 1px solid #ccc; padding: 15px; border-radius: 5px; margin-bottom: 20px; line-height: 1.8; font-size: 16px;">
-                    {html_text}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Add JavaScript for click handling
-                    st.markdown("""
-                    <script>
-                    function handleWordClick(wordIndex) {
-                        // This would typically send a message to Streamlit
-                        // For now, we'll just alert the word index
-                        alert("Clicked on word index: " + wordIndex);
-                    }
-                    </script>
-                    """, unsafe_allow_html=True)
-                    
-                    # Legend for error types
-                    st.caption("Red underline: Spelling errors | Orange underline: Confusable words | Click on any highlighted word for suggestions")
-                    
-                    # Show corrections and analysis in tabbed layout
-                    st.subheader("Suggested Corrections")
-                    subtab1, subtab_analysis, subtab2 = st.tabs(
-                        ["Spelling Errors", "Error Analysis", "Confusable Words"]
-                    )
-
-                    spelling_errors = [err for err in errors if err[1] == "non-word"]
-                    real_word_errors = [err for err in errors if err[1] == "real-word"]
-
-                    with subtab1:
-                        if spelling_errors:
-                            for i, (word, start, end, error_type) in [(idx, error_info[idx]) for idx, _ in spelling_errors]:
-                                # Get context
-                                prev_word = words[i-1].lower() if i > 0 and words[i-1].isalpha() else None
-                                next_word = words[i+1].lower() if i < len(words)-1 and words[i+1].isalpha() else None
-                                
-                                # Get suggestions with detailed stats
-                                suggestions = corrector.suggest_corrections_with_stats(word.lower(), prev_word, next_word)
-                                
-                                if suggestions:
-                                    st.write(f"**{word}** → Suggestions with detailed analysis:")
-                                    
-                                    # Create a table for the suggestions
-                                    suggestion_data = []
-                                    for idx, suggestion in enumerate(suggestions):
-                                        suggestion_data.append({
-                                            "Rank": idx + 1,
-                                            "Suggestion": suggestion['candidate'],
-                                            "Frequency": suggestion['frequency'],
-                                            "Edit Distance": suggestion['edit_distance'],
-                                            "Context Score": f"{suggestion['score']:.2f}",
-                                            "P(prev|word)": f"{suggestion['prev_prob']:.4f}" if suggestion['prev_prob'] > 0 else "N/A",
-                                            "P(word|next)": f"{suggestion['next_prob']:.4f}" if suggestion['next_prob'] > 0 else "N/A"
-                                        })
-                                    
-                                    # Display the table
-                                    st.table(suggestion_data)
-                                    
-                                    # Explain why the top suggestion is best
-                                    if len(suggestions) > 0:
-                                        best = suggestions[0]
-                                        st.write(f"**Why '{best['candidate']}' is the best suggestion:**")
-                                        
-                                        reasons = []
-                                        if best['frequency'] > 0:
-                                            reasons.append(f"High frequency ({best['frequency']} occurrences in corpus)")
-                                        if best['edit_distance'] == 1:
-                                            reasons.append("Only 1 edit away from the original")
-                                        elif best['edit_distance'] == 2:
-                                            reasons.append("Only 2 edits away from the original")
-                                        if best['prev_prob'] > 0.01:
-                                            reasons.append(f"Fits well with previous word (P={best['prev_prob']:.4f})")
-                                        if best['next_prob'] > 0.01:
-                                            reasons.append(f"Fits well with next word (P={best['next_prob']:.4f})")
-                                        
-                                        if reasons:
-                                            for reason in reasons:
-                                                st.write(f"- {reason}")
-                                        else:
-                                            st.write("It has the highest overall score considering all factors")
-                                else:
-                                    st.write(f"**{word}** → No suggestions found")
-                        else:
-                            st.success("No spelling errors found!")
-
-                    with subtab_analysis:
-                        render_spellcheck_error_analysis(
-                            st.session_state.get("spell_error_analysis")
-                        )
-
-                    with subtab2:
-                        if real_word_errors:
-                            for i, (word, start, end, error_type) in [(idx, error_info[idx]) for idx, _ in real_word_errors]:
-                                # Get context
-                                prev_word = words[i-1].lower() if i > 0 and words[i-1].isalpha() else None
-                                next_word = words[i+1].lower() if i < len(words)-1 and words[i+1].isalpha() else None
-                                
-                                # Get suggestions with detailed stats
-                                suggestions = corrector.suggest_corrections_with_stats(word.lower(), prev_word, next_word)
-                                
-                                if suggestions:
-                                    st.write(f"**{word}** → Common confusions and alternatives:")
-                                    
-                                    # Create a table for the suggestions
-                                    suggestion_data = []
-                                    for idx, suggestion in enumerate(suggestions):
-                                        suggestion_data.append({
-                                            "Rank": idx + 1,
-                                            "Suggestion": suggestion['candidate'],
-                                            "Frequency": suggestion['frequency'],
-                                            "Confusion Weight": f"{suggestion['confusable_weight']:.2f}" if suggestion['confusable_weight'] > 0 else "N/A",
-                                            "Context Score": f"{suggestion['score']:.2f}",
-                                            "P(prev|word)": f"{suggestion['prev_prob']:.4f}" if suggestion['prev_prob'] > 0 else "N/A",
-                                            "P(word|next)": f"{suggestion['next_prob']:.4f}" if suggestion['next_prob'] > 0 else "N/A"
-                                        })
-                                    
-                                    # Display the table
-                                    st.table(suggestion_data)
-                                else:
-                                    st.write(f"**{word}** → No suggestions found")
-                        else:
-                            st.success("No confusable words found!")
-
-                    if not errors:
-                        st.success("No errors detected! Your text looks great!")
-                        word_count = len([w for w in words if w.isalpha()])
-                        unique_words = len(set([w.lower() for w in words if w.isalpha()]))
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Word Count", word_count)
-                        with col2:
-                            st.metric("Unique Words", unique_words)
-            
+                    _clear_selection_query()
             else:
                 st.warning("Please enter some text to check.")
+
+        spell_results = st.session_state.get("spell_check_results")
+        if spell_results:
+            words = spell_results["tokens"]
+            token_positions = spell_results["token_positions"]
+            errors = spell_results["errors"]
+            error_map = spell_results["errors_map"]
+            error_info = spell_results["error_info"]
+            analyzed_text = spell_results["text"]
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Errors", spell_results["total_errors"])
+            with col2:
+                st.metric("Spelling Errors", spell_results["non_word_count"])
+            with col3:
+                st.metric("Confusable Words", spell_results["real_word_count"])
+
+            suggestion_menu_map = {}
+            for err_idx, (err_word, _, _, _) in error_info.items():
+                suggestions = _suggestions_for_error(
+                    corrector,
+                    words,
+                    err_idx,
+                    max_suggestions=8,
+                )
+                candidate_options = []
+                seen_candidates = set()
+                for suggestion in suggestions:
+                    candidate = suggestion["candidate"]
+                    candidate_key = candidate.lower()
+                    if candidate_key == err_word.lower() or candidate_key in seen_candidates:
+                        continue
+                    seen_candidates.add(candidate_key)
+                    candidate_options.append(candidate)
+                if candidate_options:
+                    suggestion_menu_map[err_idx] = candidate_options
+
+            st.subheader("Text Analysis")
+            interactive_event = _render_interactive_text_component(
+                analyzed_text,
+                token_positions,
+                error_map,
+                suggestion_menu_map,
+                key=f"text_analysis_component_{hash(analyzed_text)}",
+            )
+            if interactive_event and isinstance(interactive_event, dict):
+                event_id = interactive_event.get("event_id")
+                if event_id != st.session_state.get("last_text_menu_event_id"):
+                    st.session_state.last_text_menu_event_id = event_id
+                    try:
+                        event_error_idx = int(interactive_event.get("error_index"))
+                    except (TypeError, ValueError):
+                        event_error_idx = None
+                    event_candidate = interactive_event.get("candidate")
+                    if (
+                        event_error_idx in suggestion_menu_map
+                        and event_error_idx in error_info
+                        and isinstance(event_candidate, str)
+                    ):
+                        valid_candidates = {
+                            cand.lower(): cand for cand in suggestion_menu_map[event_error_idx]
+                        }
+                        candidate_key = event_candidate.lower()
+                        if candidate_key in valid_candidates:
+                            source_word = error_info[event_error_idx][0]
+                            replacement = _preserve_token_case(
+                                source_word, valid_candidates[candidate_key]
+                            )
+                            _apply_correction_and_refresh(
+                                corrector,
+                                spell_results,
+                                event_error_idx,
+                                replacement,
+                            )
+
+            st.caption(
+                "Red underline: Spelling errors | Orange underline: Confusable words | Click or right-click any highlighted word, then click a suggestion to apply immediately"
+            )
+
+            st.subheader("Suggested Corrections")
+            subtab1, subtab_analysis, subtab2 = st.tabs(
+                ["Spelling Errors", "Error Analysis", "Confusable Words"]
+            )
+
+            spelling_errors = [err for err in errors if err[1] == "non-word"]
+            real_word_errors = [err for err in errors if err[1] == "real-word"]
+
+            with subtab1:
+                if spelling_errors:
+                    for i, (word, start, end, error_type) in [
+                        (idx, error_info[idx]) for idx, _ in spelling_errors
+                    ]:
+                        suggestions = _suggestions_for_error(corrector, words, i)
+
+                        if suggestions:
+                            st.write(f"**{word}** → Suggestions with detailed analysis:")
+
+                            suggestion_data = []
+                            for idx, suggestion in enumerate(suggestions):
+                                suggestion_data.append({
+                                    "Rank": idx + 1,
+                                    "Suggestion": suggestion["candidate"],
+                                    "Frequency": suggestion["frequency"],
+                                    "Edit Distance": suggestion["edit_distance"],
+                                    "Context Score": f"{suggestion['score']:.2f}",
+                                    "P(prev|word)": (
+                                        f"{suggestion['prev_prob']:.4f}"
+                                        if suggestion["prev_prob"] > 0
+                                        else "N/A"
+                                    ),
+                                    "P(word|next)": (
+                                        f"{suggestion['next_prob']:.4f}"
+                                        if suggestion["next_prob"] > 0
+                                        else "N/A"
+                                    ),
+                                })
+
+                            st.table(suggestion_data)
+
+                            best = suggestions[0]
+                            st.write(
+                                f"**Why '{best['candidate']}' is the best suggestion:**"
+                            )
+
+                            reasons = []
+                            if best["frequency"] > 0:
+                                reasons.append(
+                                    f"High frequency ({best['frequency']} occurrences in corpus)"
+                                )
+                            if best["edit_distance"] == 1:
+                                reasons.append("Only 1 edit away from the original")
+                            elif best["edit_distance"] == 2:
+                                reasons.append("Only 2 edits away from the original")
+                            if best["prev_prob"] > 0.01:
+                                reasons.append(
+                                    f"Fits well with previous word (P={best['prev_prob']:.4f})"
+                                )
+                            if best["next_prob"] > 0.01:
+                                reasons.append(
+                                    f"Fits well with next word (P={best['next_prob']:.4f})"
+                                )
+
+                            if reasons:
+                                for reason in reasons:
+                                    st.write(f"- {reason}")
+                            else:
+                                st.write("It has the highest overall score considering all factors")
+                        else:
+                            st.write(f"**{word}** → No suggestions found")
+                else:
+                    st.success("No spelling errors found!")
+
+            with subtab_analysis:
+                render_spellcheck_error_analysis(
+                    st.session_state.get("spell_error_analysis")
+                )
+
+            with subtab2:
+                if real_word_errors:
+                    for i, (word, start, end, error_type) in [
+                        (idx, error_info[idx]) for idx, _ in real_word_errors
+                    ]:
+                        suggestions = _suggestions_for_error(corrector, words, i)
+
+                        if suggestions:
+                            st.write(f"**{word}** → Common confusions and alternatives:")
+
+                            suggestion_data = []
+                            for idx, suggestion in enumerate(suggestions):
+                                suggestion_data.append({
+                                    "Rank": idx + 1,
+                                    "Suggestion": suggestion["candidate"],
+                                    "Frequency": suggestion["frequency"],
+                                    "Confusion Weight": (
+                                        f"{suggestion['confusable_weight']:.2f}"
+                                        if suggestion["confusable_weight"] > 0
+                                        else "N/A"
+                                    ),
+                                    "Context Score": f"{suggestion['score']:.2f}",
+                                    "P(prev|word)": (
+                                        f"{suggestion['prev_prob']:.4f}"
+                                        if suggestion["prev_prob"] > 0
+                                        else "N/A"
+                                    ),
+                                    "P(word|next)": (
+                                        f"{suggestion['next_prob']:.4f}"
+                                        if suggestion["next_prob"] > 0
+                                        else "N/A"
+                                    ),
+                                })
+
+                            st.table(suggestion_data)
+                        else:
+                            st.write(f"**{word}** → No suggestions found")
+                else:
+                    st.success("No confusable words found!")
+
+            if not errors:
+                st.success("No errors detected! Your text looks great!")
+                word_count = len([w for w in words if w.isalpha()])
+                unique_words = len(set([w.lower() for w in words if w.isalpha()]))
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Word Count", word_count)
+                with col2:
+                    st.metric("Unique Words", unique_words)
     
     with tab2:
         st.header("Word Explorer")
