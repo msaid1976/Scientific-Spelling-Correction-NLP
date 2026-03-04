@@ -1,0 +1,232 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Interactive Text Menu</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: transparent;
+      }
+      #root {
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 15px;
+        line-height: 1.8;
+        font-size: 16px;
+        background: #fff;
+      }
+      .non-word {
+        background-color: #ffcccc;
+        border-bottom: 2px solid #d00000;
+        padding: 2px;
+        border-radius: 3px;
+        color: #000;
+        cursor: pointer;
+      }
+      .real-word {
+        background-color: #ffe6cc;
+        border-bottom: 2px solid #ff9900;
+        padding: 2px;
+        border-radius: 3px;
+        color: #000;
+        cursor: pointer;
+      }
+      #spell-suggest-menu {
+        position: absolute;
+        background: #fff;
+        border: 1px solid #c9c9c9;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+        border-radius: 8px;
+        padding: 6px;
+        z-index: 99999;
+        min-width: 180px;
+      }
+      .menu-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: none;
+        background: transparent;
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: #1f2937;
+        transition: background-color 0.15s ease, color 0.15s ease;
+      }
+      .menu-btn:hover {
+        background: #dbeafe;
+        color: #1d4ed8;
+      }
+      .menu-btn:focus-visible {
+        outline: 2px solid #93c5fd;
+        outline-offset: 2px;
+      }
+      .empty {
+        color: #666;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const root = document.getElementById("root");
+      const Streamlit = {
+        RENDER_EVENT: "streamlit:render",
+        setComponentReady() {
+          window.parent.postMessage(
+            {
+              isStreamlitMessage: true,
+              type: "streamlit:componentReady",
+              apiVersion: 1,
+            },
+            "*"
+          );
+        },
+        setFrameHeight(height) {
+          window.parent.postMessage(
+            {
+              isStreamlitMessage: true,
+              type: "streamlit:setFrameHeight",
+              height: Math.max(120, Number(height) || 120),
+            },
+            "*"
+          );
+        },
+        setComponentValue(value) {
+          window.parent.postMessage(
+            {
+              isStreamlitMessage: true,
+              type: "streamlit:setComponentValue",
+              value: value,
+            },
+            "*"
+          );
+        },
+        events: {
+          addEventListener(type, callback) {
+            window.addEventListener("message", (event) => {
+              const message = event && event.data ? event.data : {};
+              if (!message || message.type !== type) {
+                return;
+              }
+              callback({ detail: { args: message.args || {} } });
+            });
+          },
+        },
+      };
+
+      function closeMenu() {
+        const menu = document.getElementById("spell-suggest-menu");
+        if (menu) {
+          menu.remove();
+        }
+      }
+
+      function openMenu(evt, errorIndex, suggestions) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        closeMenu();
+        if (!suggestions || suggestions.length === 0) {
+          return false;
+        }
+
+        const menu = document.createElement("div");
+        menu.id = "spell-suggest-menu";
+        menu.style.left = `${evt.pageX}px`;
+        menu.style.top = `${evt.pageY}px`;
+
+        suggestions.forEach((candidate) => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "menu-btn";
+          item.textContent = candidate;
+          item.onclick = (clickEvt) => {
+            clickEvt.preventDefault();
+            clickEvt.stopPropagation();
+            Streamlit.setComponentValue({
+              event_id: `${Date.now()}-${errorIndex}-${candidate}`,
+              error_index: errorIndex,
+              candidate: candidate,
+            });
+            closeMenu();
+          };
+          menu.appendChild(item);
+        });
+
+        document.body.appendChild(menu);
+        setTimeout(() => {
+          document.addEventListener(
+            "click",
+            () => {
+              closeMenu();
+            },
+            { once: true }
+          );
+        }, 0);
+        return false;
+      }
+
+      function render(event) {
+        const args = event && event.detail ? event.detail.args : {};
+        const data = args && args.data ? args.data : {};
+        const text = typeof data.text === "string" ? data.text : "";
+        const tokens = Array.isArray(data.tokens) ? data.tokens : [];
+
+        root.innerHTML = "";
+        if (!text || tokens.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "No text analysis to display.";
+          root.appendChild(empty);
+          Streamlit.setFrameHeight(document.body.scrollHeight + 8);
+          return;
+        }
+
+        let last = 0;
+        tokens.forEach((token) => {
+          const start = Number(token.start);
+          const end = Number(token.end);
+          if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start) {
+            return;
+          }
+
+          if (start > last) {
+            root.appendChild(document.createTextNode(text.slice(last, start)));
+          }
+
+          const word = text.slice(start, end);
+          const errorType = token.error_type;
+          const suggestions = Array.isArray(token.suggestions) ? token.suggestions : [];
+
+          if (errorType) {
+            const span = document.createElement("span");
+            span.className = errorType === "non-word" ? "non-word" : "real-word";
+            span.textContent = word;
+            span.title = "Click to choose correction";
+            span.addEventListener("click", (evt) => openMenu(evt, token.index, suggestions));
+            span.addEventListener("contextmenu", (evt) => openMenu(evt, token.index, suggestions));
+            root.appendChild(span);
+          } else {
+            root.appendChild(document.createTextNode(word));
+          }
+
+          last = end;
+        });
+
+        if (last < text.length) {
+          root.appendChild(document.createTextNode(text.slice(last)));
+        }
+
+        Streamlit.setFrameHeight(document.body.scrollHeight + 8);
+      }
+
+      Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, render);
+      Streamlit.setComponentReady();
+      Streamlit.setFrameHeight(140);
+    </script>
+  </body>
+</html>
