@@ -32,9 +32,9 @@ The preprocessing pipeline expects arXiv metadata content and builds language-mo
 
 ## Data preparation 
 ```
-1- Download the arXiv dataset, place it in the 📁 corpus folder.
-2- run preprocess_corpus.py to generate the five JSON artifacts,
-3- launch the Streamlit application with streamlit run SpellingCorrection.py . 
+1- Download the arXiv dataset from Link above, place the downloaded file into the 📁 corpus folder.
+2- Run preprocess_corpus.py to generate the five JSON artifacts,
+3- Launch the Streamlit application with streamlit run SpellingCorrection.py . 
 ```
 
 ## Repository Structure
