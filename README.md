@@ -34,7 +34,7 @@ The preprocessing pipeline expects arXiv metadata content and builds language-mo
 
 ```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate
 pip install -r requirements.txt
 ```
 
