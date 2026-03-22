@@ -16,6 +16,7 @@ A Streamlit application for scientific-domain spelling correction using edit-dis
 - Error analysis dashboard with metrics and charts
 - Word Explorer for browsing vocabulary entries
 - Corpus statistics and word analysis visualizations
+- 
 
 ## Dataset Source
 
@@ -29,6 +30,13 @@ The pre-processing pipeline streams the title and abstract fields in order and, 
 
 The preprocessing pipeline expects arXiv metadata content and builds language-model artifacts from that scientific source.
 
+## Installation
+
+```bash
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
 ## Data preparation 
 - 1- Download the [arxiv](https://www.kaggle.com/datasets/Cornell-University/arxiv) dataset from Link above, place the downloaded file into the 📁 `corpus` folder.
@@ -88,13 +96,6 @@ Scientific-Spelling-Correction-NLP/
 - ranks candidates using frequency and contextual probability
 - visualizes error patterns and corpus statistics
 
-## Installation
-
-```bash
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
 
 ## Run the App
 
