@@ -16,7 +16,7 @@ A Streamlit application for scientific-domain spelling correction using edit-dis
 - Error analysis dashboard with metrics and charts
 - Word Explorer for browsing vocabulary entries
 - Corpus statistics and word analysis visualizations
-- 
+  
 
 ## Dataset Source
 
@@ -40,8 +40,8 @@ pip install -r requirements.txt
 
 ## Data preparation 
 - 1- Download the [arxiv](https://www.kaggle.com/datasets/Cornell-University/arxiv) dataset from Link above, place the downloaded file into the 📁 `corpus` folder.
-- 2- Run `preprocess_corpus.py` to generate the five JSON artifacts
-- 3- Launch the Streamlit application with streamlit run `SpellingCorrection.py` . 
+- 2- Run  `preprocess_corpus.py` to generate the five JSON artifacts. 
+- 3- Launch the Streamlit application with streamlit run `SpellingCorrection.py`. 
 
 
 ## Repository Structure
