@@ -23,7 +23,19 @@ The scientific corpus used in this project comes from the arXiv dataset publishe
 
 - [Cornell-University/arxiv](https://www.kaggle.com/datasets/Cornell-University/arxiv)
 
+The JSONL snapshot includes about 2.2 million academic preprints.
+
+The pre-processing pipeline streams the title and abstract fields in order and, after removing entries considered to have an insufficient word count (below a word frequency of 2), retains a total of 991,616 tokens.
+
 The preprocessing pipeline expects arXiv metadata content and builds language-model artifacts from that scientific source.
+
+
+## Data preparation 
+```
+1- Download the arXiv dataset, place it in the 📁 corpus folder.
+2- run preprocess_corpus.py to generate the five JSON artifacts,
+3- launch the Streamlit application with streamlit run SpellingCorrection.py . 
+```
 
 ## Repository Structure
 
