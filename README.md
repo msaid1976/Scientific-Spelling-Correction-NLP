@@ -30,7 +30,7 @@ The pre-processing pipeline streams the title and abstract fields in order and, 
 
 The preprocessing pipeline expects arXiv metadata content and builds language-model artifacts from that scientific source.
 
-## Installation
+##  Install dependencies
 
 ```bash
 python -m venv .venv
