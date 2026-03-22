@@ -244,6 +244,6 @@ def preprocess_corpus(
 
 if __name__ == "__main__":
     corpus_path = "corpus/arxiv-metadata-oai-snapshot.json"  # Update this path
-    preprocess_corpus(corpus_path, min_words=30000000, min_word_frequency=1)
+    preprocess_corpus(corpus_path, min_words=1000000, min_word_frequency=1)
     
 
