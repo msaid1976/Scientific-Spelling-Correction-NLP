@@ -31,13 +31,13 @@ The preprocessing pipeline expects arXiv metadata content and builds language-mo
 
 
 ## Data preparation 
-```
-1- Download the arXiv dataset from Link above, place the downloaded file into the 📁 corpus folder.
-2- Run preprocess_corpus.py to generate the five JSON artifacts,
-3- Launch the Streamlit application with streamlit run SpellingCorrection.py . 
-```
+- 1- Download the [arxiv](https://www.kaggle.com/datasets/Cornell-University/arxiv) dataset from Link above, place the downloaded file into the 📁 `corpus` folder.
+- 2- Run `preprocess_corpus.py` to generate the five JSON artifacts
+- 3- Launch the Streamlit application with streamlit run `SpellingCorrection.py` . 
+
 
 ## Repository Structure
+After performing All of the 3 data preparation step the folder structure will look like 
 
 ```text
 Scientific-Spelling-Correction-NLP/
