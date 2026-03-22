@@ -2,74 +2,6 @@
 
 A Streamlit application for scientific-domain spelling correction using edit-distance candidate generation, unigram and bigram language modeling, and context-aware ranking built from an arXiv-based corpus.
 
-## Overview
-
-This project focuses on spelling correction in scientific writing rather than generic everyday text. It supports:
-
-- corpus preprocessing and rebuild workflows
-- loading a scientific language model into memory
-- non-word and real-word/confusable error detection
-- ranked correction suggestions with context scores
-- corpus visualization and vocabulary exploration
-
-## Streamlit App Preview
-
-### 1. Corpus Management
-
-The sidebar manages the full corpus lifecycle, from preprocessing configuration to loading and rebuilding the language model.
-
-<p align="center">
-  <img src="assets/03-Corpus Management.jpg" alt="Corpus Management" width="900">
-</p>
-
-<p align="center">
-  <img src="assets/005- Complete Corpus Lifecycle Control Interface.jpg" alt="Corpus Lifecycle Control Interface" width="900">
-</p>
-
-### 2. Spell Check Workspace
-
-Users can paste their own scientific text or load predefined domain-focused samples before running the spell checker.
-
-<p align="center">
-  <img src="assets/008- Spell Checker tab.jpg" alt="Spell Checker Tab" width="900">
-</p>
-
-<p align="center">
-  <img src="assets/009- Spell Check - Predefined Samples.jpg" alt="Predefined Samples" width="900">
-</p>
-
-### 3. Correction Results and Analysis
-
-The app highlights errors, ranks correction candidates, and explains results through tables and visual analysis.
-
-<p align="center">
-  <img src="assets/011- spell check-Results.jpg" alt="Spell Check Results" width="900">
-</p>
-
-<p align="center">
-  <img src="assets/018- Suggested Corrections Tab 2- Error Analysis 1.jpg" alt="Error Analysis" width="900">
-</p>
-
-### 4. Word Explorer
-
-The vocabulary browser supports search, sorting, pagination, and quick inspection of word probabilities and frequencies.
-
-<p align="center">
-  <img src="assets/012- Word Explorer Vocabulary Interface.jpg" alt="Word Explorer" width="900">
-</p>
-
-### 5. Corpus Visualizations
-
-The visualization module helps inspect corpus scale, frequency behavior, and word-level patterns.
-
-<p align="center">
-  <img src="assets/007-Corpus Visualization - Corpus Statistics.jpg" alt="Corpus Statistics" width="900">
-</p>
-
-<p align="center">
-  <img src="assets/07-Corpus Visualization - Word Analysis.jpg" alt="Word Analysis" width="900">
-</p>
-
 ## Key Features
 
 - Scientific-domain spelling correction tailored for research-style text
@@ -174,6 +106,76 @@ streamlit run SpellingCorrection.py
 - Pandas
 - Altair
 - N-gram language modeling
+  
+## Overview
+
+This project focuses on spelling correction in scientific writing rather than generic everyday text. It supports:
+
+- corpus preprocessing and rebuild workflows
+- loading a scientific language model into memory
+- non-word and real-word/confusable error detection
+- ranked correction suggestions with context scores
+- corpus visualization and vocabulary exploration
+
+## Streamlit App Preview
+
+### 1. Corpus Management
+
+The sidebar manages the full corpus lifecycle, from preprocessing configuration to loading and rebuilding the language model.
+
+<p align="center">
+  <img src="assets/03-Corpus Management.jpg" alt="Corpus Management" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/005- Complete Corpus Lifecycle Control Interface.jpg" alt="Corpus Lifecycle Control Interface" width="900">
+</p>
+
+### 2. Spell Check Workspace
+
+Users can paste their own scientific text or load predefined domain-focused samples before running the spell checker.
+
+<p align="center">
+  <img src="assets/008- Spell Checker tab.jpg" alt="Spell Checker Tab" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/009- Spell Check - Predefined Samples.jpg" alt="Predefined Samples" width="900">
+</p>
+
+### 3. Correction Results and Analysis
+
+The app highlights errors, ranks correction candidates, and explains results through tables and visual analysis.
+
+<p align="center">
+  <img src="assets/011- spell check-Results.jpg" alt="Spell Check Results" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/018- Suggested Corrections Tab 2- Error Analysis 1.jpg" alt="Error Analysis" width="900">
+</p>
+
+### 4. Word Explorer
+
+The vocabulary browser supports search, sorting, pagination, and quick inspection of word probabilities and frequencies.
+
+<p align="center">
+  <img src="assets/012- Word Explorer Vocabulary Interface.jpg" alt="Word Explorer" width="900">
+</p>
+
+### 5. Corpus Visualizations
+
+The visualization module helps inspect corpus scale, frequency behavior, and word-level patterns.
+
+<p align="center">
+  <img src="assets/007-Corpus Visualization - Corpus Statistics.jpg" alt="Corpus Statistics" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/07-Corpus Visualization - Word Analysis.jpg" alt="Word Analysis" width="900">
+</p>
+
+
 
 ## Notes
 
