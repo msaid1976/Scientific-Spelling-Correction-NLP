@@ -41,7 +41,7 @@ pip install -r requirements.txt
 ## Data preparation 
 - 1- Download the [arxiv](https://www.kaggle.com/datasets/Cornell-University/arxiv) dataset from Link above, place the downloaded file into the 📁 `corpus` folder.
 - 2- Run  `preprocess_corpus.py` to generate the following `(unigrams.json, bigrams.json, trigrams.json, vocab.json, metadata.json)` JSON artifacts into 📁 `preprocessed_data` folder. 
-- 3- Launch the Streamlit application with streamlit run `SpellingCorrection.py`. 
+- 3- Launch the Streamlit application with `streamlit run SpellingCorrection.py`. 
 
 
 ## Repository Structure
